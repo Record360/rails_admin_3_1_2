@@ -9,7 +9,12 @@
   export_action = RailsAdmin::Config::Actions.find(:export, { controller: self.controller, abstract_model: @abstract_model })
   export_action = nil unless export_action && authorized?(export_action.authorization_key, @abstract_model)
   description = RailsAdmin.config(@abstract_model.model_name).description
-  properties = @model_config.list.with(controller: self.controller, view: self, object: @abstract_model.model.new).fields_for_table
+
+  # Pass bindings to all field definitions (for dynamic behavior)
+  # https://github.com/Record360/rails_admin/commit/25e0dca5c5a7d19543b03b4b9d07e91893e84d4c
+  bindings = { controller: self.controller, view: self, object: @abstract_model.model.new }
+  properties = @model_config.list.with(bindings).fields_for_table
+
   checkboxes = @model_config.list.checkboxes?
   table_table_header_count = begin
     count = checkboxes ? 1 : 0
@@ -18,14 +23,14 @@
 %>
 
 <% content_for :contextual_tabs do %>
-  <% if filterable_fields.present? %>
+  <% if filterable_fields(bindings).present? %>
     <li class="nav-item dropdown">
       <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#">
         <%= t('admin.misc.add_filter') %>
         <b class="caret"></b>
       </a>
       <ul class="dropdown-menu dropdown-menu-end" id="filters">
-        <% filterable_fields.each do |field| %>
+        <% filterable_fields(bindings).each do |field| %>
           <li>
             <a
               href="#"
@@ -54,7 +59,7 @@
 <div id="list">
   <%= form_tag(index_path(params.except(*%w[page f query])), method: :get) do %>
     <div class="card mb-3 p-3 bg-light">
-      <div class="row" data-options="<%= ordered_filter_options.to_json %>" id="filters_box"></div>
+      <div class="row" data-options="<%= ordered_filter_options(bindings).to_json %>" id="filters_box"></div>
       <hr class="filters_box" style="display:<%= ordered_filters.empty? ? 'none' : 'block' %>"/>
       <div class="row">
         <div class="col-sm-6">
@@ -80,7 +85,7 @@
       </div>
     </div>
   <% end %>
-  <% unless @model_config.list.scopes.empty? %>
+  <% unless (scopes = @model_config.list.with(bindings).scopes).empty? %>
     <ul class="nav nav-tabs" id="scope_selector">
       <% @model_config.list.scopes.each_with_index do |scope, index| %>
         <% scope = '_all' if scope.nil? %>

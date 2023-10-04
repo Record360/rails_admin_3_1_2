@@ -18,8 +18,11 @@ module RailsAdmin
       'danger'                          # > 1/3 of max
     end
 
-    def filterable_fields
-      @filterable_fields ||= @model_config.list.fields.select(&:filterable?)
+    def filterable_fields(bindings)
+      # Pass bindings to all field definitions (for dynamic behavior)
+      # https://github.com/Record360/rails_admin/commit/25e0dca5c5a7d19543b03b4b9d07e91893e84d4c
+
+      @filterable_fields ||= @model_config.list.fields.collect { |f| f.with(bindings) }.select(&:filterable?)
     end
 
     def ordered_filters
@@ -39,13 +42,21 @@ module RailsAdmin
       end.to_a.sort_by(&:first)
     end
 
-    def ordered_filter_options
+    def ordered_filter_options(bindings)
       if ordered_filters
         @ordered_filter_options ||= ordered_filters.map do |duplet|
           filter_for_field = duplet[1]
           filter_name = filter_for_field.keys.first
           filter_hash = filter_for_field.values.first
-          unless (field = filterable_fields.find { |f| f.name == filter_name.to_sym })
+
+          # Pass bindings to all field definitions (for dynamic behavior)
+          # https://github.com/Record360/rails_admin/commit/25e0dca5c5a7d19543b03b4b9d07e91893e84d4c
+
+          # TODO: Test ENUMS
+          # Unable to find a way to fix enums similar to:
+          # https://github.com/Record360/rails_admin/commit/ef49884325693dc2a3476f42a8459f12a1106422
+
+          unless (field = filterable_fields(bindings).find { |f| f.name == filter_name.to_sym })
             raise "#{filter_name} is not currently filterable; filterable fields are #{filterable_fields.map(&:name).join(', ')}"
           end
 

@@ -136,6 +136,14 @@ module RailsAdmin
       options = options.merge(query: params[:query]) if params[:query].present?
       options = options.merge(filters: params[:f]) if params[:f].present?
       options = options.merge(bulk_ids: params[:bulk_ids]) if params[:bulk_ids]
+
+      # Pass bindings to all field definitions (for dynamic behavior)
+      # https://github.com/Record360/rails_admin/commit/25e0dca5c5a7d19543b03b4b9d07e91893e84d4c
+
+      bindings = { controller: self }
+      fields = model_config.list.fields.collect { |f| f.with(bindings) }.select(&:filterable?)
+      model_config.abstract_model.all(options, scope, fields)
+
       model_config.abstract_model.all(options, scope)
     end
 

@@ -25,17 +25,17 @@ module RailsAdmin
         model.all
       end
 
-      def first(options = {}, scope = nil)
-        all(options, scope).first
+      def first(options = {}, scope = nil, fields = config.list.fields)
+        all(options, scope, fields).first
       end
 
-      def all(options = {}, scope = nil)
+      def all(options = {}, scope = nil, fields = config.list.fields)
         scope ||= scoped
         scope = scope.includes(options[:include]) if options[:include]
         scope = scope.limit(options[:limit]) if options[:limit]
         scope = bulk_scope(scope, options) if options[:bulk_ids]
-        scope = query_scope(scope, options[:query]) if options[:query]
-        scope = filter_scope(scope, options[:filters]) if options[:filters]
+        scope = query_scope(scope, options[:query], fields) if options[:query]
+        scope = filter_scope(scope, options[:filters], fields) if options[:filters]
         scope = scope.send(Kaminari.config.page_method_name, options[:page]).per(options[:per]) if options[:page] && options[:per]
         scope = sort_scope(scope, options) if options[:sort]
         scope
@@ -115,6 +115,11 @@ module RailsAdmin
 
       def sort_scope(scope, options)
         direction = options[:sort_reverse] ? :asc : :desc
+
+        # Sort with NULLS Last on PostgreSQL
+        # https://github.com/Record360/rails_admin/commit/b66515ecf5ebe8053f1559827a3898adc468
+        direction += ' NULL LAST' if model.connection.adapter_name.casecmp('postgresql').zero?
+
         case options[:sort]
         when String, Symbol
           scope.reorder("#{options[:sort]} #{direction}")
@@ -136,6 +141,26 @@ module RailsAdmin
           @scope = scope
         end
 
+
+        # Fix to support filtering on columns that aren't searchable
+        # https://github.com/Record360/rails_admin/commit/09c14bbaf13d13f66384aac3aa09f26f674f3ba9
+
+        def add_filter(field, value, operator)
+          # support fields that are filterable but not searchable
+          if field.filterable && !field.searchable
+            column_infos = {column: "#{field.abstract_model.table_name}.#{field.name}", type: field.type}
+
+            statement, value1, value2 = StatementBuilder.new(column_infos[:column], column_infos[:type], value, operator, @scope.connection.adapter_name).to_statement
+            @statements << statement if statement.present?
+            @values << value1 unless value1.nil?
+            @values << value2 unless value2.nil?
+            table, column = column_infos[:column].split('.')
+            @tables.push(table) if column
+          else
+            add(field, value, operator)
+          end
+        end
+
         def add(field, value, operator)
           field.searchable_columns.flatten.each do |column_infos|
             statement, value1, value2 = StatementBuilder.new(column_infos[:column], column_infos[:type], value, operator, @scope.connection.adapter_name).to_statement
@@ -154,8 +179,11 @@ module RailsAdmin
         end
       end
 
+      # Fix to pass bindings to search_by in query_scope
+      # https://github.com/Record360/rails_admin/commit/05de81b4007c48dfcb19be6cf03913cfa9aa46b2
+
       def query_scope(scope, query, fields = config.list.fields.select(&:queryable?))
-        if config.list.search_by
+        if config.list.with(fields.first.bindings).search_by
           scope.send(config.list.search_by, query)
         else
           wb = WhereBuilder.new(scope)
@@ -177,7 +205,7 @@ module RailsAdmin
             field = fields.detect { |f| f.name.to_s == field_name }
             value = parse_field_value(field, filter_dump[:v])
 
-            wb.add(field, value, (filter_dump[:o] || RailsAdmin::Config.default_search_operator))
+            wb.add_field(field, value, (filter_dump[:o] || RailsAdmin::Config.default_search_operator))
             # AND current filter statements to other filter statements
             scope = wb.build
           end

@@ -34,10 +34,14 @@ module RailsAdmin
           proc do
             @objects ||= list_entries
 
-            unless @model_config.list.scopes.empty?
+            # Pass bindings to all field definitions (for dynamic behavior)
+            # https://github.com/Record360/rails_admin/commit/25e0dca5c5a7d19543b03b4b9d07e91893e84d4c
+            scopes = @model_config.list.with(controller: self).scopes
+
+            unless scopes.empty?
               if params[:scope].blank?
-                @objects = @objects.send(@model_config.list.scopes.first) unless @model_config.list.scopes.first.nil?
-              elsif @model_config.list.scopes.collect(&:to_s).include?(params[:scope])
+                @objects = @objects.send(scopes.first) unless scopes.first.nil?
+              elsif scopes.collect(&:to_s).include?(params[:scope])
                 @objects = @objects.send(params[:scope].to_sym)
               end
             end
