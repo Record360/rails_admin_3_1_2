@@ -118,7 +118,7 @@ module RailsAdmin
 
         # Sort with NULLS Last on PostgreSQL
         # https://github.com/Record360/rails_admin/commit/b66515ecf5ebe8053f1559827a3898adc468
-        direction += ' NULL LAST' if model.connection.adapter_name.casecmp('postgresql').zero?
+        direction = "#{direction} NULL LAST" if model.connection.adapter_name.casecmp('postgresql').zero?
 
         case options[:sort]
         when String, Symbol
